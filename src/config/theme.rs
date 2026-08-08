@@ -151,7 +151,8 @@ pub struct ModeThemeColors {
 }
 
 /// Parse a color string into a ratatui Color.
-/// Supports: hex (#rrggbb, #rgb), named colors, rgb(r,g,b), and reset aliases.
+/// Supports: hex (#rrggbb, #rgb), named colors, rgb(r,g,b), indexed palette
+/// colors ("19" or "indexed(19)"), and reset aliases.
 pub fn parse_color(s: &str) -> ratatui::style::Color {
     use ratatui::style::Color;
     let s = s.trim().to_lowercase();
@@ -159,6 +160,17 @@ pub fn parse_color(s: &str) -> ratatui::style::Color {
     match s.as_str() {
         "reset" | "default" | "none" | "transparent" => return Color::Reset,
         _ => {}
+    }
+
+    // Indexed palette colors resolve through the terminal's live palette, so
+    // they follow the user's terminal theme (including light/dark switches).
+    if let Ok(index) = s.parse::<u8>() {
+        return Color::Indexed(index);
+    }
+    if let Some(inner) = s.strip_prefix("indexed(").and_then(|s| s.strip_suffix(')')) {
+        if let Ok(index) = inner.trim().parse::<u8>() {
+            return Color::Indexed(index);
+        }
     }
 
     if let Some(hex) = s.strip_prefix('#') {
@@ -268,6 +280,19 @@ light_name = "lattee"
         for value in ["reset", "default", "none", "transparent"] {
             assert_eq!(parse_color(value), Color::Reset, "value: {value}");
         }
+    }
+
+    #[test]
+    fn parse_color_accepts_indexed_palette_colors() {
+        use ratatui::style::Color;
+
+        assert_eq!(parse_color("19"), Color::Indexed(19));
+        assert_eq!(parse_color("0"), Color::Indexed(0));
+        assert_eq!(parse_color("255"), Color::Indexed(255));
+        assert_eq!(parse_color("indexed(19)"), Color::Indexed(19));
+        assert_eq!(parse_color(" indexed( 8 ) "), Color::Indexed(8));
+        // Out-of-range indices are not valid u8s and keep the fallback.
+        assert_eq!(parse_color("256"), Color::Cyan);
     }
 
     #[test]

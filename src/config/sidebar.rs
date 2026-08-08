@@ -40,15 +40,22 @@ fn validate_sidebar_rows<T>(rows: &[Vec<T>]) -> Result<(), String> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SidebarTokenColor {
-    r: u8,
-    g: u8,
-    b: u8,
+enum SidebarColorKind {
+    Rgb(u8, u8, u8),
+    // Local patch: indexed palette colors resolve through the terminal's
+    // live palette, mirroring the indexed support in theme.custom tokens.
+    Indexed(u8),
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarTokenColor(SidebarColorKind);
 
 impl SidebarTokenColor {
     pub(crate) fn ratatui(self) -> ratatui::style::Color {
-        ratatui::style::Color::Rgb(self.r, self.g, self.b)
+        match self.0 {
+            SidebarColorKind::Rgb(r, g, b) => ratatui::style::Color::Rgb(r, g, b),
+            SidebarColorKind::Indexed(index) => ratatui::style::Color::Indexed(index),
+        }
     }
 }
 
@@ -57,7 +64,12 @@ impl Serialize for SidebarTokenColor {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("#{:02x}{:02x}{:02x}", self.r, self.g, self.b))
+        match self.0 {
+            SidebarColorKind::Rgb(r, g, b) => {
+                serializer.serialize_str(&format!("#{r:02x}{g:02x}{b:02x}"))
+            }
+            SidebarColorKind::Indexed(index) => serializer.serialize_str(&index.to_string()),
+        }
     }
 }
 
@@ -67,14 +79,25 @@ impl<'de> Deserialize<'de> for SidebarTokenColor {
         D: serde::Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        let hex = value.strip_prefix('#').filter(|hex| {
+        let trimmed = value.trim();
+        if let Ok(index) = trimmed.parse::<u8>() {
+            return Ok(Self(SidebarColorKind::Indexed(index)));
+        }
+        if let Some(index) = trimmed
+            .strip_prefix("indexed(")
+            .and_then(|s| s.strip_suffix(')'))
+            .and_then(|s| s.trim().parse::<u8>().ok())
+        {
+            return Ok(Self(SidebarColorKind::Indexed(index)));
+        }
+        let hex = trimmed.strip_prefix('#').filter(|hex| {
             hex.is_ascii()
                 && matches!(hex.len(), 3 | 6)
                 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
         });
         let Some(hex) = hex else {
             return Err(serde::de::Error::custom(
-                "sidebar token fg must be #RGB or #RRGGBB",
+                "sidebar token fg must be #RGB, #RRGGBB, or an indexed palette color (\"20\")",
             ));
         };
         let (r, g, b) = if hex.len() == 3 {
@@ -93,7 +116,7 @@ impl<'de> Deserialize<'de> for SidebarTokenColor {
                 u8::from_str_radix(&hex[4..6], 16).expect("validated hex digits"),
             )
         };
-        Ok(Self { r, g, b })
+        Ok(Self(SidebarColorKind::Rgb(r, g, b)))
     }
 }
 
@@ -511,6 +534,27 @@ mod tests {
             ]
         );
         assert_eq!(config.spaces.row_gap, 0);
+    }
+
+    #[test]
+    fn token_fg_accepts_indexed_palette_colors() {
+        use ratatui::style::Color;
+
+        let hex: SidebarTokenColor = serde_json::from_str("\"#89b4fa\"").unwrap();
+        assert_eq!(hex.ratatui(), Color::Rgb(0x89, 0xb4, 0xfa));
+
+        let indexed: SidebarTokenColor = serde_json::from_str("\"20\"").unwrap();
+        assert_eq!(indexed.ratatui(), Color::Indexed(20));
+
+        let explicit: SidebarTokenColor = serde_json::from_str("\"indexed(15)\"").unwrap();
+        assert_eq!(explicit.ratatui(), Color::Indexed(15));
+
+        // Round-trips keep the compact form.
+        assert_eq!(serde_json::to_string(&indexed).unwrap(), "\"20\"");
+        assert_eq!(serde_json::to_string(&hex).unwrap(), "\"#89b4fa\"");
+
+        assert!(serde_json::from_str::<SidebarTokenColor>("\"256\"").is_err());
+        assert!(serde_json::from_str::<SidebarTokenColor>("\"blue\"").is_err());
     }
 
     #[test]
