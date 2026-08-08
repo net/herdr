@@ -82,7 +82,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # light_name = "catppuccin-latte"
 
 # Override individual color tokens on top of the base theme.
-# Accepts: hex (#rrggbb), named colors, rgb(r,g,b), or panel_bg = "reset"
+# Accepts: hex (#rrggbb), named colors, rgb(r,g,b), indexed palette colors ("19"), or panel_bg = "reset"
 # [theme.custom]
 # sidebar_bg = "#181825"
 # active_row_bg = "#1e1e2e"
