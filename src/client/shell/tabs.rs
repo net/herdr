@@ -23,9 +23,11 @@ pub(crate) fn render_tab_bar(
         .collect::<Vec<_>>();
     let desired_widths = tabs
         .iter()
-        .map(|tab| {
-            let label = tab_label(tab);
-            display_width(&label).saturating_add(4).max(MIN_TAB_WIDTH)
+        .enumerate()
+        .map(|(index, tab)| {
+            let label = tab_label(tab, index + 1);
+            // Local patch: symmetric single-space padding around the label.
+            display_width(&label).saturating_add(2).max(MIN_TAB_WIDTH)
         })
         .collect::<Vec<_>>();
     let content = tab_bar_content_area(snapshot, area);
@@ -92,7 +94,7 @@ pub(crate) fn render_tab_bar(
     let mut first_visible = None;
     let mut last_visible = None;
     for (index, tab) in tabs.iter().enumerate().skip(*tab_scroll) {
-        let name = tab_label(tab);
+        let name = tab_label(tab, index + 1);
         let desired = desired_widths[index];
         let remaining = tab_right.saturating_sub(x);
         let width = desired.min(remaining);
@@ -371,17 +373,52 @@ fn max_tab_scroll(widths: &[u16], available: u16) -> usize {
     start
 }
 
-fn tab_label(tab: &ClientShellTab) -> String {
-    if tab.zoomed {
-        format!("{} Z", tab.label)
+fn tab_label(tab: &ClientShellTab, position: usize) -> String {
+    // Local patch: prefix named tabs with their 1-based position in the
+    // workspace — the index prefix+1..9 (SwitchTab) selects — so those
+    // bindings are discoverable. Not `tab.number`: that is the stable public
+    // id number (w1:tE is 14) and drifts from the position as tabs close.
+    // Auto-named tabs already display as their position alone.
+    let name = if tab.custom_label {
+        format!("{position}: {}", tab.label)
     } else {
         tab.label.clone()
+    };
+    if tab.zoomed {
+        format!("{name} Z")
+    } else {
+        name
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::max_tab_scroll;
+    use super::{max_tab_scroll, tab_label};
+    use crate::protocol::ClientShellTab;
+
+    fn tab(number: usize, label: &str, custom_label: bool) -> ClientShellTab {
+        ClientShellTab {
+            tab_id: format!("w1:t{number}"),
+            workspace_id: "w1".into(),
+            number,
+            label: label.into(),
+            custom_label,
+            zoomed: false,
+            focused: false,
+            agent_status: crate::api::schema::AgentStatus::Idle,
+        }
+    }
+
+    // Local patch: the prefix is the position prefix+N selects, never the
+    // public tab number (which drifts once earlier tabs close).
+    #[test]
+    fn named_tab_label_uses_position_not_public_number() {
+        assert_eq!(tab_label(&tab(14, "helium", true), 2), "2: helium");
+        assert_eq!(tab_label(&tab(23, "3", false), 3), "3");
+        let mut zoomed = tab(50, "phosphorus", true);
+        zoomed.zoomed = true;
+        assert_eq!(tab_label(&zoomed, 6), "6: phosphorus Z");
+    }
 
     #[test]
     fn trailing_scroll_limit_accounts_for_full_widths_and_separators() {

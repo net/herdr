@@ -3,11 +3,13 @@ use super::*;
 #[test]
 fn tab_overflow_controls_scroll_the_client_owned_tab_bar() {
     let mut snapshot = snapshot();
+    // Local patch: compact tabs (MIN_TAB_WIDTH 3, padding 2) fit eight
+    // single-digit labels without overflowing, so use longer labels.
     snapshot.tabs.extend((2..=8).map(|number| ClientShellTab {
         tab_id: format!("tab_{number}"),
         workspace_id: "ws_1".into(),
         number,
-        label: number.to_string(),
+        label: format!("tab-number-{number}"),
         custom_label: false,
         zoomed: false,
         focused: false,
