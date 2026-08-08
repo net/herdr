@@ -114,12 +114,14 @@ fn tab_bar_renders_endpoint_status_ellipses_and_clamps_to_useful_scroll() {
         },
     ];
     projected.tab_bar_right_separator = " · ".into();
+    // Local patch: compact tabs (MIN_TAB_WIDTH 3, padding 2) fit eight
+    // single-digit labels without overflowing, so use longer labels.
     for number in 2..=8 {
         projected.tabs.push(ClientShellTab {
             tab_id: format!("tab_{number}"),
             workspace_id: "ws_1".into(),
             number,
-            label: number.to_string(),
+            label: format!("tab-number-{number}"),
             custom_label: false,
             zoomed: false,
             focused: false,
