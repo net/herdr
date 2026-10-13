@@ -958,3 +958,20 @@ fn every_configured_prefix_enters_prefix_mode() {
         assert_eq!(state.mode, ClientShellMode::Terminal);
     }
 }
+
+#[test]
+fn plain_text_key_after_prefix_resolves_its_binding_on_a_report_all_host() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_host_reports_key_releases(true);
+    state.set_snapshot(Box::new(snapshot()));
+
+    // A terminal `text:` keybind sends the prefix and its key as raw bytes.
+    assert!(!state.handle_input_bytes(&[0x02]).detach);
+    assert_eq!(state.mode, ClientShellMode::Prefix);
+    // Mirrors the client: prefix mode switches the host to report-all.
+    state.set_host_reports_all_keys(state.host_keyboard_report_all_requested());
+
+    let detach = state.handle_input_bytes(b"q");
+    assert!(detach.detach);
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+}
